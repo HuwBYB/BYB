@@ -1,0 +1,1 @@
+<div>AI Companion logic placeholder</div>

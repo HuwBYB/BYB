@@ -1,0 +1,1 @@
+// Main application routes and dynamic rendering

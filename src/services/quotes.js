@@ -1,0 +1,1 @@
+// Module to fetch and display inspirational quotes
