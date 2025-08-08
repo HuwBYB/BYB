@@ -1,5 +1,14 @@
+import { supabase } from "../supabaseClient";
+
 export async function saveGoalToDatabase(userId, goalData) {
-  // Replace with Firebase/Supabase integration
-  console.log("Saving to DB for:", userId, goalData);
-  // await db.collection("goals").doc(userId).set(goalData);
+  try {
+    const { error } = await supabase
+      .from("big_goals")
+      .insert([{ user_id: userId, ...goalData, created_at: new Date() }]);
+
+    if (error) throw error;
+    console.log("✅ Goal saved successfully");
+  } catch (err) {
+    console.error("❌ Error saving goal:", err.message);
+  }
 }
