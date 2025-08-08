@@ -17,7 +17,10 @@ function Landing() {
           <h2>🎯 Today’s Big Goal</h2>
           <p>Plan and break down your most important task.</p>
         </Link>
-
+<Link to="/zig" style={styles.card}>
+  <h2>📚 Zig Goal Corner</h2>
+  <p>Break your BIG goal into daily steps</p>
+</Link>
         <Link to="/power-pose" style={styles.card}>
           <h2>💪 Power Pose Booster</h2>
           <p>Boost your mood and confidence instantly.</p>
@@ -52,6 +55,7 @@ export default function App() {
       <Route path="/ai" element={<AICompanion />} />
       <Route path="/todos" element={<DailyTodos />} />
       <Route path="*" element={<Landing />} />
+      <Route path="/zig" element={<ZigGoalCorner />} />
 <Route path="/vision" element={<VisionBoard />} />
 
     </Routes>
