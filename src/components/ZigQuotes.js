@@ -1,6 +1,22 @@
 export default [
   "You don’t have to be great to start, but you have to start to be great.",
-  "People often say motivation doesn’t last. Well, neither does bathing – that’s why we recommend it daily.",
-  "You can get everything in life you want if you will just help enough other people get what they want.",
-  "Lack of direction, not lack of time, is the problem. We all have twenty-four hour days."
+  "A goal properly set is halfway reached.",
+  "You can’t hit a target you cannot see, and you cannot see a target you do not have.",
+  "People do not wander around and then find themselves at the top of Mount Everest.",
+  "You will get all you want in life if you help enough other people get what they want.",
+  "Discipline yourself to do the things you need to do when you need to do them.",
+  "Lack of direction, not lack of time, is the problem. We all have twenty-four-hour days.",
+  "Make today worth remembering.",
+  "You cannot consistently perform in a manner inconsistent with the way you see yourself.",
+  "If you aim at nothing, you will hit it every time.",
+  "Your attitude, not your aptitude, will determine your altitude.",
+  "Motivation gets you going and habit gets you there.",
+  "Goals are dreams we convert to plans and take action to fulfill.",
+  "Success is not a destination, it’s a journey.",
+  "Expect the best. Prepare for the worst. Capitalize on what comes.",
+  "Repetition is the mother of learning, the father of action.",
+  "When obstacles arise, change your direction; not your decision to get there.",
+  "Outstanding people have one thing in common: an absolute sense of mission.",
+  "You can get everything in life you want if you help enough other people get what they want.",
+  "A positive attitude will have positive results because attitudes are contagious."
 ];
