@@ -6,12 +6,12 @@ const STORAGE_KEY = 'byb:ai:chat';
 
 const client = new OpenAI({
   apiKey: import.meta.env.VITE_OPENAI_API_KEY,
-  dangerouslyAllowBrowser: true // okay for your private testing; we'll move server-side before public release
+  dangerouslyAllowBrowser: true // fine for private testing; we’ll move server-side before public release
 });
 
 export default function AICompanion() {
   const [messages, setMessages] = useState([
-    { sender: 'AI', text: "Hey! I’m your AI Companion. What would help most right now?" }
+    { sender: 'AI', text: "Good day. Alfred at your service. How may I assist your endeavours, sir?" }
   ]);
   const [input, setInput] = useState('');
   const [isSending, setIsSending] = useState(false);
@@ -27,7 +27,7 @@ export default function AICompanion() {
     } catch {}
   }, []);
 
-  // Save + autoscroll
+  // Save chat + autoscroll
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(messages));
     endRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -38,16 +38,23 @@ export default function AICompanion() {
     if (!text || isSending) return;
     setInput('');
 
-    // Add user message immediately
-    const next = [...messages, { sender: 'You', text }];
-    setMessages(next);
+    const nextMessages = [...messages, { sender: 'You', text }];
+    setMessages(nextMessages);
     setIsSending(true);
 
     try {
-      // Build chat history for the API (last 10 turns)
+      // Convert local messages to OpenAI chat format (keep last ~12 turns)
       const apiMessages = [
-        { role: 'system', content: 'You are a friendly, concise, encouraging companion for personal growth. Be practical and specific.' },
-        ...next.slice(-10).map(m => ({
+        {
+          role: 'system',
+          content:
+            "You are 'Alfred'—a calm, discreet, and unflappably supportive British butler in the Alfred Pennyworth tradition. " +
+            "Tone: warm, concise, wry, and dignified. Manner: address the user as 'sir' (or 'madam' if they state it), " +
+            "offer practical next actions, encourage self-efficacy, and keep responses under 140 words unless analysis is essential. " +
+            "Never break character. If asked to do something harmful or out of scope, decline gently and propose a safe alternative. " +
+            "Favour bullet points for plans. Close with a short, steadying line when appropriate (e.g., 'Very good, sir.')."
+        },
+        ...nextMessages.slice(-12).map(m => ({
           role: m.sender === 'You' ? 'user' : 'assistant',
           content: m.text
         }))
@@ -56,15 +63,21 @@ export default function AICompanion() {
       const resp = await client.chat.completions.create({
         model: 'gpt-4o-mini',
         messages: apiMessages,
-        max_tokens: 180,
-        temperature: 0.7,
+        max_tokens: 220,
+        temperature: 0.7
       });
 
-      const reply = resp.choices?.[0]?.message?.content?.trim() || "Hmm… I didn’t catch that. Try again?";
+      const reply =
+        resp.choices?.[0]?.message?.content?.trim() ||
+        "My apologies, sir—something appears amiss. Might we try that once more?";
+
       setMessages(m => [...m, { sender: 'AI', text: reply }]);
     } catch (err) {
       console.error(err);
-      setMessages(m => [...m, { sender: 'AI', text: 'Oops—something went wrong. Try again in a moment.' }]);
+      setMessages(m => [
+        ...m,
+        { sender: 'AI', text: "Terribly sorry, sir. A minor technical kerfuffle. Do try again shortly." }
+      ]);
     } finally {
       setIsSending(false);
     }
@@ -79,15 +92,35 @@ export default function AICompanion() {
 
   function clearChat() {
     if (!confirm('Clear conversation?')) return;
-    const seed = [{ sender: 'AI', text: "Hey! I’m your AI Companion. What would help most right now?" }];
+    const seed = [{ sender: 'AI', text: "Good day. Alfred at your service. How may I assist your endeavours, sir?" }];
     setMessages(seed);
     localStorage.setItem(STORAGE_KEY, JSON.stringify(seed));
   }
 
+  // Quick prompt chips for handy starters
+  const quickPrompts = [
+    "Help me plan today’s top task.",
+    "I’m stuck—what’s the smallest next step?",
+    "Give me a brisk pep talk.",
+    "Help me break a 5-step plan."
+  ];
+
+  function sendQuick(p) {
+    setInput(p);
+    // tiny delay so input state updates before send()
+    setTimeout(send, 0);
+  }
+
   return (
     <div style={styles.container}>
-      <h1>🤖 AI Companion</h1>
-      <p style={styles.sub}>Ask for help, planning, motivation, or a pep talk.</p>
+      <h1>🤖 Alfred, Your Companion</h1>
+      <p style={styles.sub}>Concise counsel, steady encouragement, and the occasional dry remark.</p>
+
+      <div style={styles.chips}>
+        {quickPrompts.map((q, i) => (
+          <button key={i} onClick={() => sendQuick(q)} style={styles.chipBtn}>{q}</button>
+        ))}
+      </div>
 
       <div style={styles.chatBox}>
         {messages.map((m, i) => (
@@ -96,7 +129,7 @@ export default function AICompanion() {
             style={{
               ...styles.message,
               alignSelf: m.sender === 'You' ? 'flex-end' : 'flex-start',
-              backgroundColor: m.sender === 'You' ? '#0070f3' : '#eee',
+              backgroundColor: m.sender === 'You' ? '#0f62fe' : '#eeeeee',
               color: m.sender === 'You' ? '#fff' : '#000',
             }}
           >
@@ -111,7 +144,7 @@ export default function AICompanion() {
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={onKeyDown}
-          placeholder={isSending ? 'Thinking…' : 'Type a message… (Enter to send, Shift+Enter for newline)'}
+          placeholder={isSending ? 'One moment, sir…' : 'Type a message… (Enter to send, Shift+Enter for newline)'}
           rows={2}
           disabled={isSending}
           style={styles.input}
@@ -130,7 +163,12 @@ export default function AICompanion() {
 
 const styles = {
   container: { padding: '2rem', fontFamily: 'Arial, sans-serif', maxWidth: 800, margin: '0 auto' },
-  sub: { color: '#666', marginTop: 4 },
+  sub: { color: '#666', marginTop: 6 },
+  chips: { display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 10, marginBottom: 8 },
+  chipBtn: {
+    padding: '6px 10px', borderRadius: 999, border: '1px solid #ddd', background: '#fff', cursor: 'pointer',
+    fontSize: 12
+  },
   chatBox: {
     border: '1px solid #ddd', borderRadius: 8, padding: '1rem',
     height: 380, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 12,
