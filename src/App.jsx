@@ -1,15 +1,18 @@
 // src/App.jsx
 import React from 'react';
-import { Routes, Route, Link } from 'react-router-dom';
+import { Link, Routes, Route } from 'react-router-dom';
 
 import BigGoalPlanner from './components/BigGoalPlanner.jsx';
 import PowerPoseBooster from './components/PowerPoseBooster.jsx';
 import AICompanion from './components/AICompanion.jsx';
+import DailyTodos from './components/DailyTodos.jsx';
 
+// Simple landing page with cards
 function Landing() {
   return (
     <div style={styles.container}>
       <h1 style={styles.heading}>Best You Blueprint</h1>
+
       <div style={styles.grid}>
         <Link to="/big-goal" style={styles.card}>
           <h2>🎯 Today’s Big Goal</h2>
@@ -22,19 +25,14 @@ function Landing() {
         </Link>
 
         <Link to="/ai" style={styles.card}>
-          <h2>🤖 AI Companion</h2>
-          <p>Your personal AI support, advice & encouragement.</p>
+          <h2>🤖 Alfred, Your Companion</h2>
+          <p>Concise counsel with a butler’s charm.</p>
         </Link>
-<Link to="/todos" style={styles.card}>
-  <h2>🗓️ Daily To-Dos</h2>
-  <p>Business • Personal • Family</p>
-</Link>
 
-// …in <Routes>:
-<Route path="/todos" element={<DailyTodos />} />
-
-      
-      
+        <Link to="/todos" style={styles.card}>
+          <h2>🗓️ Daily To-Dos</h2>
+          <p>Business • Personal • Family</p>
+        </Link>
       </div>
     </div>
   );
@@ -47,6 +45,9 @@ export default function App() {
       <Route path="/big-goal" element={<BigGoalPlanner />} />
       <Route path="/power-pose" element={<PowerPoseBooster />} />
       <Route path="/ai" element={<AICompanion />} />
+      <Route path="/todos" element={<DailyTodos />} />
+      {/* keep this last */}
+      <Route path="*" element={<Landing />} />
     </Routes>
   );
 }
@@ -59,7 +60,10 @@ const styles = {
     fontFamily: 'Arial, sans-serif',
     textAlign: 'center',
   },
-  heading: { fontSize: '2.5rem', marginBottom: '2rem' },
+  heading: {
+    fontSize: '2.5rem',
+    marginBottom: '2rem',
+  },
   grid: {
     display: 'grid',
     gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
