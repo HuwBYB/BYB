@@ -1,6 +1,6 @@
 import React from 'react';
 import { Link, Routes, Route } from 'react-router-dom';
-
+import VisionBoard from './components/VisionBoard.jsx';
 import BigGoalPlanner from './components/BigGoalPlanner.jsx';
 import PowerPoseBooster from './components/PowerPoseBooster.jsx';
 import AICompanion from './components/AICompanion.jsx';
@@ -21,6 +21,12 @@ function Landing() {
           <h2>💪 Power Pose Booster</h2>
           <p>Boost your mood and confidence instantly.</p>
         </Link>
+  
+        <Link to="/vision" style={styles.card}>
+  <h2>🖼️ Vision Board</h2>
+  <p>Pin up to 8 images • Collage view</p>
+</Link>
+
 
         <Link to="/ai" style={styles.card}>
           <h2>🤖 Alfred, Your Companion</h2>
@@ -45,6 +51,8 @@ export default function App() {
       <Route path="/ai" element={<AICompanion />} />
       <Route path="/todos" element={<DailyTodos />} />
       <Route path="*" element={<Landing />} />
+<Route path="/vision" element={<VisionBoard />} />
+
     </Routes>
   );
 }
