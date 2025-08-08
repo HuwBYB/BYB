@@ -7,11 +7,11 @@
     "preview": "vite preview"
   },
   "dependencies": {
- "react-router-dom": "^6.23.1",
-    "react-router-dom": "^6.23.1",
-    "react": "^18.2.0",
-    "react-dom": "^18.2.0"
-  },
+  "react": "^18.2.0",
+  "react-dom": "^18.2.0",
+  "react-router-dom": "^6.23.1",
+  "openai": "^4.56.0"
+}
   "devDependencies": {
     "vite": "^4.5.0",
     "@vitejs/plugin-react": "^4.0.0"
