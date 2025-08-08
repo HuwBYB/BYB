@@ -1,6 +1,7 @@
 import React from 'react';
 import { Link, Routes, Route } from 'react-router-dom';
 import VisionBoard from './components/VisionBoard.jsx';
+import ZigGoalCorner from './components/ZigGoalCorner.jsx';
 import BigGoalPlanner from './components/BigGoalPlanner.jsx';
 import PowerPoseBooster from './components/PowerPoseBooster.jsx';
 import AICompanion from './components/AICompanion.jsx';
