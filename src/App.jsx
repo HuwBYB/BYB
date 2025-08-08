@@ -25,6 +25,16 @@ function Landing() {
           <h2>🤖 AI Companion</h2>
           <p>Your personal AI support, advice & encouragement.</p>
         </Link>
+<Link to="/todos" style={styles.card}>
+  <h2>🗓️ Daily To-Dos</h2>
+  <p>Business • Personal • Family</p>
+</Link>
+
+// …in <Routes>:
+<Route path="/todos" element={<DailyTodos />} />
+
+      
+      
       </div>
     </div>
   );
