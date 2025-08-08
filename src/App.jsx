@@ -1,4 +1,3 @@
-// src/App.jsx
 import React from 'react';
 import { Link, Routes, Route } from 'react-router-dom';
 
@@ -7,7 +6,6 @@ import PowerPoseBooster from './components/PowerPoseBooster.jsx';
 import AICompanion from './components/AICompanion.jsx';
 import DailyTodos from './components/DailyTodos.jsx';
 
-// Simple landing page with cards
 function Landing() {
   return (
     <div style={styles.container}>
@@ -46,7 +44,6 @@ export default function App() {
       <Route path="/power-pose" element={<PowerPoseBooster />} />
       <Route path="/ai" element={<AICompanion />} />
       <Route path="/todos" element={<DailyTodos />} />
-      {/* keep this last */}
       <Route path="*" element={<Landing />} />
     </Routes>
   );
