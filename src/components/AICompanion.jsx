@@ -1,188 +1,117 @@
 // src/components/AICompanion.jsx
-import React, { useEffect, useRef, useState } from 'react';
-import OpenAI from 'openai';
+import React, { useState } from 'react';
 
-// 🔎 Debug: confirms whether the env var is visible in this build
-console.log('Has VITE_OPENAI_API_KEY?', !!import.meta.env.VITE_OPENAI_API_KEY);
-
-const STORAGE_KEY = 'byb:ai:chat';
-
-const client = new OpenAI({
-  apiKey: import.meta.env.VITE_OPENAI_API_KEY,
-  dangerouslyAllowBrowser: true // ok for your private testing; move server-side before public release
-});
+const API_KEY = import.meta.env.VITE_OPENAI_API_KEY;
 
 export default function AICompanion() {
-  const [messages, setMessages] = useState([
-    { sender: 'AI', text: "Good day. Alfred at your service. How may I assist your endeavours, sir?" }
-  ]);
+  const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
-  const [isSending, setIsSending] = useState(false);
-  const endRef = useRef(null);
+  const [loading, setLoading] = useState(false);
 
-  // Load saved chat
-  useEffect(() => {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return;
-    try {
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed) && parsed.length) setMessages(parsed);
-    } catch {}
-  }, []);
+  // Alfred's personality pools
+  const alfredisms = [
+    "One does try to maintain standards, sir.",
+    "Tea is optional, but excellence is not.",
+    "If I may be so bold, sir…",
+    "I have taken the liberty of preparing a metaphor for you.",
+    "Terribly sorry to interrupt, but duty calls."
+  ];
 
-  // Save chat + autoscroll
-  useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(messages));
-    endRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+  const modes = {
+    formal: "You are Alfred, Bruce Wayne’s trusted butler. Always formal, articulate, and supportive. Use British English. Keep answers concise but thoughtful.",
+    witty: "You are Alfred, but today you’re in a witty and dry-humoured mood. Offer clever remarks while still being helpful and polite.",
+    motivational: "You are Alfred, but especially encouraging today. Blend formal respect with uplifting advice and motivation."
+  };
 
-  async function send() {
-    const text = input.trim();
-    if (!text || isSending) return;
+  // Current default mode (can be changed to random later)
+  const defaultMode = "formal";
+
+  async function sendMessage() {
+    if (!input.trim()) return;
+
+    const newMessages = [...messages, { role: 'user', content: input }];
+    setMessages(newMessages);
     setInput('');
-
-    const nextMessages = [...messages, { sender: 'You', text }];
-    setMessages(nextMessages);
-    setIsSending(true);
+    setLoading(true);
 
     try {
-      // Build conversation for OpenAI (last ~12 turns)
-      const apiMessages = [
-        {
-          role: 'system',
-          content:
-            "You are 'Alfred'—a calm, discreet, and unflappably supportive British butler in the Alfred Pennyworth tradition. " +
-            "Tone: warm, concise, wry, and dignified. Address the user as 'sir' unless they specify otherwise. " +
-            "Offer practical, specific next actions. Keep replies under ~140 words unless analysis is essential. " +
-            "Never break character. Decline harmful requests gently. Prefer bullet points for plans. " +
-            "Close with a brief, steadying line when suitable (e.g., 'Very good, sir.')."
-        },
-        ...nextMessages.slice(-12).map(m => ({
-          role: m.sender === 'You' ? 'user' : 'assistant',
-          content: m.text
-        }))
-      ];
+      const conversationContext = newMessages
+        .slice(-6) // keep last 6 exchanges for short-term memory
+        .map(m => `${m.role === 'user' ? "You" : "Alfred"}: ${m.content}`)
+        .join("\n");
 
-      const resp = await client.chat.completions.create({
-        model: 'gpt-4o-mini',
-        messages: apiMessages,
-        max_tokens: 220,
-        temperature: 0.7
+      const systemPrompt = `${modes[defaultMode]}
+      Occasionally insert a short remark from this list when appropriate: ${alfredisms.join(" | ")}
+      Keep the tone consistent throughout the conversation.`;
+
+      const res = await fetch("https://api.openai.com/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${API_KEY}`,
+        },
+        body: JSON.stringify({
+          model: "gpt-4o-mini",
+          messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: conversationContext }
+          ],
+          temperature: 0.8
+        }),
       });
 
-      const reply =
-        resp.choices?.[0]?.message?.content?.trim() ||
-        "My apologies, sir—something appears amiss. Might we try that once more?";
-      setMessages(m => [...m, { sender: 'AI', text: reply }]);
+      const data = await res.json();
+
+      if (data.error) {
+        setMessages(prev => [...prev, { role: 'assistant', content: `Terribly sorry, sir. ${data.error.message}` }]);
+      } else {
+        const reply = data.choices[0].message.content.trim();
+        setMessages(prev => [...prev, { role: 'assistant', content: reply }]);
+      }
     } catch (err) {
-      // ❗ Make the actual error visible in-chat and in console
-      console.error('OpenAI error:', err);
-      const msg =
-        (err && err.response && err.response.data && err.response.data.error && err.response.data.error.message) ||
-        err?.message ||
-        'Unknown error';
-      setMessages(m => [
-        ...m,
-        { sender: 'AI', text: `Terribly sorry, sir. ${msg}` }
-      ]);
+      setMessages(prev => [...prev, { role: 'assistant', content: "Terribly sorry, sir. A minor technical kerfuffle occurred." }]);
     } finally {
-      setIsSending(false);
+      setLoading(false);
     }
-  }
-
-  function onKeyDown(e) {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      send();
-    }
-  }
-
-  function clearChat() {
-    if (!confirm('Clear conversation?')) return;
-    const seed = [{ sender: 'AI', text: "Good day. Alfred at your service. How may I assist your endeavours, sir?" }];
-    setMessages(seed);
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(seed));
-  }
-
-  // Quick prompt chips
-  const quickPrompts = [
-    "Help me plan today’s top task.",
-    "I’m stuck—what’s the smallest next step?",
-    "Give me a brisk pep talk.",
-    "Help me break a 5-step plan."
-  ];
-  function sendQuick(p) {
-    setInput(p);
-    setTimeout(send, 0);
   }
 
   return (
     <div style={styles.container}>
-      <h1>🤖 Alfred, Your Companion</h1>
-      <p style={styles.sub}>Concise counsel, steady encouragement, and the occasional dry remark.</p>
-
-      <div style={styles.chips}>
-        {quickPrompts.map((q, i) => (
-          <button key={i} onClick={() => sendQuick(q)} style={styles.chipBtn}>{q}</button>
-        ))}
-      </div>
-
+      <h2>🤵 Alfred – Your AI Butler</h2>
       <div style={styles.chatBox}>
-        {messages.map((m, i) => (
+        {messages.map((msg, i) => (
           <div
             key={i}
             style={{
               ...styles.message,
-              alignSelf: m.sender === 'You' ? 'flex-end' : 'flex-start',
-              backgroundColor: m.sender === 'You' ? '#0f62fe' : '#eeeeee',
-              color: m.sender === 'You' ? '#fff' : '#000',
+              alignSelf: msg.role === 'user' ? 'flex-end' : 'flex-start',
+              backgroundColor: msg.role === 'user' ? '#d1e7dd' : '#f8d7da'
             }}
           >
-            <strong>{m.sender}:</strong> {m.text}
+            <strong>{msg.role === 'user' ? 'You' : 'Alfred'}:</strong> {msg.content}
           </div>
         ))}
-        <div ref={endRef} />
+        {loading && <div style={styles.loading}>Alfred is composing his reply…</div>}
       </div>
-
       <div style={styles.inputRow}>
-        <textarea
+        <input
           value={input}
           onChange={(e) => setInput(e.target.value)}
-          onKeyDown={onKeyDown}
-          placeholder={isSending ? 'One moment, sir…' : 'Type a message… (Enter to send, Shift+Enter for newline)'}
-          rows={2}
-          disabled={isSending}
           style={styles.input}
+          placeholder="What may I do for you today, sir?"
         />
-        <button onClick={send} disabled={isSending} style={styles.button}>
-          {isSending ? 'Sending…' : 'Send'}
-        </button>
-      </div>
-
-      <div style={styles.tools}>
-        <button onClick={clearChat} style={styles.clearBtn}>Clear Chat</button>
+        <button onClick={sendMessage} style={styles.button}>Send</button>
       </div>
     </div>
   );
 }
 
 const styles = {
-  container: { padding: '2rem', fontFamily: 'Arial, sans-serif', maxWidth: 800, margin: '0 auto' },
-  sub: { color: '#666', marginTop: 6 },
-  chips: { display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 10, marginBottom: 8 },
-  chipBtn: {
-    padding: '6px 10px', borderRadius: 999, border: '1px solid #ddd', background: '#fff', cursor: 'pointer',
-    fontSize: 12
-  },
-  chatBox: {
-    border: '1px solid #ddd', borderRadius: 8, padding: '1rem',
-    height: 380, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 12,
-    background: '#fafafa'
-  },
-  message: { padding: '8px 12px', borderRadius: 8, maxWidth: '80%', whiteSpace: 'pre-wrap', lineHeight: 1.4 },
-  inputRow: { display: 'grid', gridTemplateColumns: '1fr auto', gap: 8 },
-  input: { padding: 10, borderRadius: 8, border: '1px solid #ddd', resize: 'vertical', fontSize: 14 },
-  button: { padding: '10px 14px', borderRadius: 8, border: '1px solid #ddd', background: '#fff', cursor: 'pointer' },
-  tools: { marginTop: 8 },
-  clearBtn: { padding: '8px 12px', border: '1px solid #ddd', borderRadius: 8, background: '#fff', cursor: 'pointer' },
+  container: { maxWidth: '600px', margin: '0 auto', padding: '1rem', fontFamily: 'Georgia, serif' },
+  chatBox: { display: 'flex', flexDirection: 'column', gap: '0.5rem', padding: '1rem', border: '1px solid #ccc', borderRadius: '8px', height: '400px', overflowY: 'auto', backgroundColor: '#fafafa' },
+  message: { padding: '0.5rem 1rem', borderRadius: '8px', maxWidth: '75%' },
+  loading: { fontStyle: 'italic', color: '#888' },
+  inputRow: { display: 'flex', marginTop: '1rem' },
+  input: { flex: 1, padding: '0.5rem', border: '1px solid #ccc', borderRadius: '4px' },
+  button: { marginLeft: '0.5rem', padding: '0.5rem 1rem', backgroundColor: '#333', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer' }
 };
