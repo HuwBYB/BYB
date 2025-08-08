@@ -1,117 +1,200 @@
 // src/components/AICompanion.jsx
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
+import OpenAI from 'openai';
+import { supabase } from '../supabaseClient';
 
-const API_KEY = import.meta.env.VITE_OPENAI_API_KEY;
+// TEMP user id for cross-device testing (use real auth later)
+const USER_ID = 'huw-dev'; // use the same string on phone/desktop to share memory
+
+// Debug: confirm envs exist at runtime
+console.log('Has OPENAI?', !!import.meta.env.VITE_OPENAI_API_KEY);
+console.log('Has SUPABASE URL?', !!import.meta.env.VITE_SUPABASE_URL);
+
+const client = new OpenAI({
+  apiKey: import.meta.env.VITE_OPENAI_API_KEY,
+  dangerouslyAllowBrowser: true
+});
 
 export default function AICompanion() {
-  const [messages, setMessages] = useState([]);
+  const [messages, setMessages] = useState([
+    { sender: 'AI', text: "Good day. Alfred at your service. How may I assist your endeavours, sir?" }
+  ]);
   const [input, setInput] = useState('');
-  const [loading, setLoading] = useState(false);
+  const [isSending, setIsSending] = useState(false);
+  const [loadingHistory, setLoadingHistory] = useState(true);
+  const endRef = useRef(null);
 
-  // Alfred's personality pools
-  const alfredisms = [
-    "One does try to maintain standards, sir.",
-    "Tea is optional, but excellence is not.",
-    "If I may be so bold, sir…",
-    "I have taken the liberty of preparing a metaphor for you.",
-    "Terribly sorry to interrupt, but duty calls."
-  ];
+  // Load last 20 messages from Supabase on mount
+  useEffect(() => {
+    (async () => {
+      try {
+        const { data, error } = await supabase
+          .from('conversations')
+          .select('role,message,created_at')
+          .eq('user_id', USER_ID)
+          .order('created_at', { ascending: true })
+          .limit(200); // keep it generous; we’ll trim in API call
 
-  const modes = {
-    formal: "You are Alfred, Bruce Wayne’s trusted butler. Always formal, articulate, and supportive. Use British English. Keep answers concise but thoughtful.",
-    witty: "You are Alfred, but today you’re in a witty and dry-humoured mood. Offer clever remarks while still being helpful and polite.",
-    motivational: "You are Alfred, but especially encouraging today. Blend formal respect with uplifting advice and motivation."
-  };
+        if (error) throw error;
 
-  // Current default mode (can be changed to random later)
-  const defaultMode = "formal";
+        if (data && data.length) {
+          const restored = data.map(r => ({
+            sender: r.role === 'user' ? 'You' : 'AI',
+            text: r.message
+          }));
+          setMessages(restored);
+        }
+      } catch (e) {
+        console.error('Load history error:', e);
+      } finally {
+        setLoadingHistory(false);
+        endRef.current?.scrollIntoView({ behavior: 'smooth' });
+      }
+    })();
+  }, []);
 
-  async function sendMessage() {
-    if (!input.trim()) return;
+  // Save a single message to Supabase
+  async function saveToCloud(role, message) {
+    try {
+      const { error } = await supabase
+        .from('conversations')
+        .insert([{ user_id: USER_ID, role, message }]);
+      if (error) throw error;
+    } catch (e) {
+      console.error('Save error:', e);
+    }
+  }
 
-    const newMessages = [...messages, { role: 'user', content: input }];
-    setMessages(newMessages);
+  async function send() {
+    const text = input.trim();
+    if (!text || isSending) return;
     setInput('');
-    setLoading(true);
+
+    const next = [...messages, { sender: 'You', text }];
+    setMessages(next);
+    setIsSending(true);
+    // Persist user message
+    saveToCloud('user', text);
 
     try {
-      const conversationContext = newMessages
-        .slice(-6) // keep last 6 exchanges for short-term memory
-        .map(m => `${m.role === 'user' ? "You" : "Alfred"}: ${m.content}`)
-        .join("\n");
-
-      const systemPrompt = `${modes[defaultMode]}
-      Occasionally insert a short remark from this list when appropriate: ${alfredisms.join(" | ")}
-      Keep the tone consistent throughout the conversation.`;
-
-      const res = await fetch("https://api.openai.com/v1/chat/completions", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${API_KEY}`,
+      // Build context for OpenAI (last ~12 turns)
+      const apiMessages = [
+        {
+          role: 'system',
+          content:
+            "You are 'Alfred'—a calm, discreet, and unflappably supportive British butler. " +
+            "Tone: warm, concise, wry, dignified. Address the user as 'sir' unless told otherwise. " +
+            "Offer practical next actions, prefer short bullet points for plans, keep replies under ~140 words, never break character."
         },
-        body: JSON.stringify({
-          model: "gpt-4o-mini",
-          messages: [
-            { role: "system", content: systemPrompt },
-            { role: "user", content: conversationContext }
-          ],
-          temperature: 0.8
-        }),
+        ...next.slice(-12).map(m => ({
+          role: m.sender === 'You' ? 'user' : 'assistant',
+          content: m.text
+        }))
+      ];
+
+      const resp = await client.chat.completions.create({
+        model: 'gpt-4o-mini',
+        messages: apiMessages,
+        max_tokens: 220,
+        temperature: 0.7
       });
 
-      const data = await res.json();
+      const reply =
+        resp.choices?.[0]?.message?.content?.trim() ||
+        "My apologies, sir—something appears amiss. Might we try once more?";
 
-      if (data.error) {
-        setMessages(prev => [...prev, { role: 'assistant', content: `Terribly sorry, sir. ${data.error.message}` }]);
-      } else {
-        const reply = data.choices[0].message.content.trim();
-        setMessages(prev => [...prev, { role: 'assistant', content: reply }]);
-      }
+      setMessages(m => [...m, { sender: 'AI', text: reply }]);
+      // Persist AI reply
+      saveToCloud('alfred', reply);
     } catch (err) {
-      setMessages(prev => [...prev, { role: 'assistant', content: "Terribly sorry, sir. A minor technical kerfuffle occurred." }]);
+      console.error('OpenAI error:', err);
+      const msg =
+        err?.response?.data?.error?.message ||
+        err?.message ||
+        'Unknown error';
+      setMessages(m => [...m, { sender: 'AI', text: `Terribly sorry, sir. ${msg}` }]);
+      saveToCloud('alfred', `Terribly sorry, sir. ${msg}`);
     } finally {
-      setLoading(false);
+      setIsSending(false);
+      endRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
+  }
+
+  function onKeyDown(e) {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      send();
+    }
+  }
+
+  async function clearChat() {
+    if (!confirm('Clear conversation from the cloud?')) return;
+    try {
+      await supabase.from('conversations').delete().eq('user_id', USER_ID);
+      setMessages([
+        { sender: 'AI', text: "Good day. Alfred at your service. How may I assist your endeavours, sir?" }
+      ]);
+    } catch (e) {
+      console.error('Clear error:', e);
     }
   }
 
   return (
     <div style={styles.container}>
-      <h2>🤵 Alfred – Your AI Butler</h2>
+      <h1>🤖 Alfred, Your Companion</h1>
+      {loadingHistory && <div style={styles.loading}>Fetching prior correspondence, sir…</div>}
+
       <div style={styles.chatBox}>
-        {messages.map((msg, i) => (
+        {messages.map((m, i) => (
           <div
             key={i}
             style={{
               ...styles.message,
-              alignSelf: msg.role === 'user' ? 'flex-end' : 'flex-start',
-              backgroundColor: msg.role === 'user' ? '#d1e7dd' : '#f8d7da'
+              alignSelf: m.sender === 'You' ? 'flex-end' : 'flex-start',
+              backgroundColor: m.sender === 'You' ? '#0f62fe' : '#eeeeee',
+              color: m.sender === 'You' ? '#fff' : '#000',
             }}
           >
-            <strong>{msg.role === 'user' ? 'You' : 'Alfred'}:</strong> {msg.content}
+            <strong>{m.sender}:</strong> {m.text}
           </div>
         ))}
-        {loading && <div style={styles.loading}>Alfred is composing his reply…</div>}
+        <div ref={endRef} />
       </div>
+
       <div style={styles.inputRow}>
-        <input
+        <textarea
           value={input}
           onChange={(e) => setInput(e.target.value)}
+          onKeyDown={onKeyDown}
+          placeholder={isSending ? 'One moment, sir…' : 'Type a message… (Enter to send, Shift+Enter for newline)'}
+          rows={2}
+          disabled={isSending}
           style={styles.input}
-          placeholder="What may I do for you today, sir?"
         />
-        <button onClick={sendMessage} style={styles.button}>Send</button>
+        <button onClick={send} disabled={isSending} style={styles.button}>
+          {isSending ? 'Sending…' : 'Send'}
+        </button>
+      </div>
+
+      <div style={styles.tools}>
+        <button onClick={clearChat} style={styles.clearBtn}>Clear Cloud Chat</button>
       </div>
     </div>
   );
 }
 
 const styles = {
-  container: { maxWidth: '600px', margin: '0 auto', padding: '1rem', fontFamily: 'Georgia, serif' },
-  chatBox: { display: 'flex', flexDirection: 'column', gap: '0.5rem', padding: '1rem', border: '1px solid #ccc', borderRadius: '8px', height: '400px', overflowY: 'auto', backgroundColor: '#fafafa' },
-  message: { padding: '0.5rem 1rem', borderRadius: '8px', maxWidth: '75%' },
-  loading: { fontStyle: 'italic', color: '#888' },
-  inputRow: { display: 'flex', marginTop: '1rem' },
-  input: { flex: 1, padding: '0.5rem', border: '1px solid #ccc', borderRadius: '4px' },
-  button: { marginLeft: '0.5rem', padding: '0.5rem 1rem', backgroundColor: '#333', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer' }
+  container: { padding: '2rem', fontFamily: 'Arial, sans-serif', maxWidth: 800, margin: '0 auto' },
+  loading: { marginBottom: 8, color: '#666' },
+  chatBox: {
+    border: '1px solid #ddd', borderRadius: 8, padding: '1rem',
+    height: 380, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 12,
+    background: '#fafafa'
+  },
+  message: { padding: '8px 12px', borderRadius: 8, maxWidth: '80%', whiteSpace: 'pre-wrap', lineHeight: 1.4 },
+  inputRow: { display: 'grid', gridTemplateColumns: '1fr auto', gap: 8 },
+  input: { padding: 10, borderRadius: 8, border: '1px solid #ddd', resize: 'vertical', fontSize: 14 },
+  button: { padding: '10px 14px', borderRadius: 8, border: '1px solid #ddd', background: '#fff', cursor: 'pointer' },
+  tools: { marginTop: 8 },
+  clearBtn: { padding: '8px 12px', border: '1px solid #ddd', borderRadius: 8, background: '#fff', cursor: 'pointer' },
 };
