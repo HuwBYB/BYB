@@ -2,11 +2,14 @@
 import React, { useEffect, useRef, useState } from 'react';
 import OpenAI from 'openai';
 
+// 🔎 Debug: confirms whether the env var is visible in this build
+console.log('Has VITE_OPENAI_API_KEY?', !!import.meta.env.VITE_OPENAI_API_KEY);
+
 const STORAGE_KEY = 'byb:ai:chat';
 
 const client = new OpenAI({
   apiKey: import.meta.env.VITE_OPENAI_API_KEY,
-  dangerouslyAllowBrowser: true // fine for private testing; we’ll move server-side before public release
+  dangerouslyAllowBrowser: true // ok for your private testing; move server-side before public release
 });
 
 export default function AICompanion() {
@@ -43,16 +46,16 @@ export default function AICompanion() {
     setIsSending(true);
 
     try {
-      // Convert local messages to OpenAI chat format (keep last ~12 turns)
+      // Build conversation for OpenAI (last ~12 turns)
       const apiMessages = [
         {
           role: 'system',
           content:
             "You are 'Alfred'—a calm, discreet, and unflappably supportive British butler in the Alfred Pennyworth tradition. " +
-            "Tone: warm, concise, wry, and dignified. Manner: address the user as 'sir' (or 'madam' if they state it), " +
-            "offer practical next actions, encourage self-efficacy, and keep responses under 140 words unless analysis is essential. " +
-            "Never break character. If asked to do something harmful or out of scope, decline gently and propose a safe alternative. " +
-            "Favour bullet points for plans. Close with a short, steadying line when appropriate (e.g., 'Very good, sir.')."
+            "Tone: warm, concise, wry, and dignified. Address the user as 'sir' unless they specify otherwise. " +
+            "Offer practical, specific next actions. Keep replies under ~140 words unless analysis is essential. " +
+            "Never break character. Decline harmful requests gently. Prefer bullet points for plans. " +
+            "Close with a brief, steadying line when suitable (e.g., 'Very good, sir.')."
         },
         ...nextMessages.slice(-12).map(m => ({
           role: m.sender === 'You' ? 'user' : 'assistant',
@@ -70,13 +73,17 @@ export default function AICompanion() {
       const reply =
         resp.choices?.[0]?.message?.content?.trim() ||
         "My apologies, sir—something appears amiss. Might we try that once more?";
-
       setMessages(m => [...m, { sender: 'AI', text: reply }]);
     } catch (err) {
-      console.error(err);
+      // ❗ Make the actual error visible in-chat and in console
+      console.error('OpenAI error:', err);
+      const msg =
+        (err && err.response && err.response.data && err.response.data.error && err.response.data.error.message) ||
+        err?.message ||
+        'Unknown error';
       setMessages(m => [
         ...m,
-        { sender: 'AI', text: "Terribly sorry, sir. A minor technical kerfuffle. Do try again shortly." }
+        { sender: 'AI', text: `Terribly sorry, sir. ${msg}` }
       ]);
     } finally {
       setIsSending(false);
@@ -97,17 +104,15 @@ export default function AICompanion() {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(seed));
   }
 
-  // Quick prompt chips for handy starters
+  // Quick prompt chips
   const quickPrompts = [
     "Help me plan today’s top task.",
     "I’m stuck—what’s the smallest next step?",
     "Give me a brisk pep talk.",
     "Help me break a 5-step plan."
   ];
-
   function sendQuick(p) {
     setInput(p);
-    // tiny delay so input state updates before send()
     setTimeout(send, 0);
   }
 
