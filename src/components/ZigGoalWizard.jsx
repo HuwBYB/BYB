@@ -5,36 +5,99 @@ import { saveGoalToDatabase } from "../utils/saveGoalToDatabase";
 import { addTasksToTodo } from "../utils/addTasksToTodo";
 import AlfredSpeechBubble from "./AlfredSpeechBubble";
 
-const STEPS = [
-  { key: "bigGoal", title: "Your Biggest Goal", helper: "We’re going to build a map to achieve it—because a goal without direction is just a dream." },
-  { key: "timeframe", title: "Pick Your Timeframe", helper: "Now we’ll break it into clear stages so you always know what’s next." },
-  { key: "yearly", title: "Milestones: Year by Year", helper: "How will you know you’re on course at each stage? Define your checkpoints." },
-  { key: "monthly", title: "Monthly Actions", helper: "What should happen each month to stay on track? We’ll add these to your monthly to-dos." },
-  { key: "weekly", title: "Weekly Actions", helper: "What will you do every week? We’ll schedule these for you." },
-  { key: "daily", title: "Daily Actions", helper: "What tiny habit moves you closer every single day? These go to your daily to-dos." },
-  { key: "finish", title: "All Set", helper: "We’ll save your plan and add your actions to your to-dos. Time to begin." },
+// ----- helpers about timeframe -----
+const TF = ["6 months", "1 year", "2 years", "3 years", "4 years", "5 years"];
+
+function parseTimeframe(tf) {
+  if (!tf) return { months: 0, years: 0 };
+  if (tf.includes("months")) return { months: Number(tf.split(" ")[0]) || 0, years: 0 };
+  if (tf.includes("year"))   return { months: 0, years: Number(tf.split(" ")[0]) || 0 };
+  return { months: 0, years: 0 };
+}
+
+function needsMidpoint(tf) {
+  // 6 months -> 3-month checkpoint
+  // 1 year   -> 6-month checkpoint
+  const { months, years } = parseTimeframe(tf);
+  return (months === 6) || (years === 1);
+}
+
+function midpointLabel(tf) {
+  const { months, years } = parseTimeframe(tf);
+  if (months === 6) return "3-month checkpoint";
+  if (years === 1)  return "6-month checkpoint";
+  return "";
+}
+
+function yearlyCount(tf) {
+  // For 2–5 years: ask for Year 1 … Year N-1 (final year = big goal)
+  const { years } = parseTimeframe(tf);
+  if (years >= 2) return years - 1;
+  return 0;
+}
+
+const BASE_STEPS = [
+  { key: "bigGoal",  title: "Your Biggest Goal", helper: "We’re going to build a map to achieve it — because a goal without direction is just a dream." },
+  { key: "timeframe",title: "Pick Your Timeframe", helper: "Choose how long this will take. We’ll break it into smaller steps so progress feels automatic." },
+  // dynamic step 3 is either "midpoint" or "yearly" or skipped
+  { key: "monthly",  title: "Monthly Actions", helper: "What should happen each month to stay on track? We’ll add these to your monthly to-dos." },
+  { key: "weekly",   title: "Weekly Actions",  helper: "Breaking it down further… what will you do each week to stay on course?" },
+  { key: "daily",    title: "Daily Actions",   helper: "Finally — the baby steps! One small thing you can do every day. This goes to your daily to-dos." },
+  { key: "finish",   title: "All Set",         helper: "We’ll save your plan and add your actions to your to-dos. Time to begin." },
 ];
 
 export default function ZigGoalWizard({ userId = "huw-dev", onClose = () => {} }) {
-  const [current, setCurrent] = useState(0);
   const [quote, setQuote] = useState("");
+  const [current, setCurrent] = useState(0);
+  const [dynamicSteps, setDynamicSteps] = useState(BASE_STEPS);
+  const [saving, setSaving] = useState(false);
+  const [showAlfred, setShowAlfred] = useState(false);
+
   const [goalData, setGoalData] = useState({
     bigGoal: "",
     timeframe: "",
-    yearlyMilestones: [],
+    // dynamic fields
+    midpoint: "",            // for 6m / 1y
+    yearlyMilestones: [],    // for 2y+
     monthlyActions: [],
     weeklyActions: [],
     dailyActions: []
   });
-  const [saving, setSaving] = useState(false);
-  const [showAlfred, setShowAlfred] = useState(false);
 
   useEffect(() => {
     setQuote(ZigQuotes[Math.floor(Math.random() * ZigQuotes.length)]);
   }, []);
 
-  const pct = Math.round((current / (STEPS.length - 1)) * 100);
+  // Rebuild steps whenever timeframe changes
+  useEffect(() => {
+    const tf = goalData.timeframe;
+    let steps = [...BASE_STEPS];
 
+    // Insert a dynamic step after timeframe:
+    // - midpoint (for 6m / 1y) OR
+    // - yearly (for 2–5y) OR
+    // - nothing (if no tf chosen yet)
+    if (tf && needsMidpoint(tf)) {
+      steps.splice(2, 0, {
+        key: "midpoint",
+        title: "Halfway Checkpoint",
+        helper: `How will you know you’re on course by the ${midpointLabel(tf)}? Define what must be true.`
+      });
+    } else if (tf && yearlyCount(tf) > 0) {
+      steps.splice(2, 0, {
+        key: "yearly",
+        title: "Milestones: Year by Year",
+        helper: "Where should you be by the end of each year to stay on track?"
+      });
+    }
+    setDynamicSteps(steps);
+  }, [goalData.timeframe]);
+
+  const total = dynamicSteps.length;
+  const pct = Math.round((current / (total - 1)) * 100);
+  const step = dynamicSteps[current];
+
+  // ----- list helpers -----
   const addField = (field) =>
     setGoalData((p) => ({ ...p, [field]: [...(p[field] || []), ""] }));
 
@@ -45,7 +108,17 @@ export default function ZigGoalWizard({ userId = "huw-dev", onClose = () => {} }
       return { ...p, [field]: copy };
     });
 
-  const next = () => setCurrent((c) => Math.min(c + 1, STEPS.length - 1));
+  // Generate the right # of yearly inputs when user clicks the helper button
+  function ensureYearlyFields() {
+    const n = yearlyCount(goalData.timeframe);
+    if (n <= 0) return;
+    setGoalData((p) => {
+      const arr = Array.from({ length: n }, (_, i) => p.yearlyMilestones?.[i] || "");
+      return { ...p, yearlyMilestones: arr };
+    });
+  }
+
+  const next = () => setCurrent((c) => Math.min(c + 1, total - 1));
   const back = () => setCurrent((c) => Math.max(c - 1, 0));
 
   async function finish() {
@@ -53,20 +126,26 @@ export default function ZigGoalWizard({ userId = "huw-dev", onClose = () => {} }
       setSaving(true);
       const res1 = await saveGoalToDatabase(userId, goalData);
       const res2 = await addTasksToTodo(userId, goalData.dailyActions, goalData.weeklyActions);
-      if (!res1.ok || !res2.ok) {
-        alert("Saved locally, but cloud save had an issue.");
-      }
+      if (!res1.ok || !res2.ok) alert("Saved locally, but cloud save had an issue.");
       setShowAlfred(true);
-      setTimeout(() => {
-        setShowAlfred(false);
-        onClose();
-      }, 3500);
+      setTimeout(() => { setShowAlfred(false); onClose(); }, 3500);
     } finally {
       setSaving(false);
     }
   }
 
-  const step = STEPS[current];
+  // ----- can proceed validation -----
+  function canProceed() {
+    const k = step.key;
+    if (k === "bigGoal")  return !!goalData.bigGoal?.trim();
+    if (k === "timeframe")return !!goalData.timeframe;
+    if (k === "midpoint") return !!goalData.midpoint?.trim();
+    if (k === "yearly")   return (goalData.yearlyMilestones || []).some(Boolean);
+    if (k === "monthly")  return (goalData.monthlyActions || []).some(Boolean);
+    if (k === "weekly")   return (goalData.weeklyActions || []).some(Boolean);
+    if (k === "daily")    return (goalData.dailyActions || []).some(Boolean);
+    return true;
+  }
 
   return (
     <div style={s.wrap}>
@@ -74,14 +153,14 @@ export default function ZigGoalWizard({ userId = "huw-dev", onClose = () => {} }
 
       <div style={s.progressWrap} aria-label="Progress">
         <div style={{ ...s.progressBar, width: `${pct}%` }} />
-        <div style={s.progressText}>{step.title} ({current + 1} of {STEPS.length})</div>
+        <div style={s.progressText}>{step.title} ({current + 1} of {total})</div>
       </div>
 
       <div style={s.card}>
         <h2 style={s.h2}>{step.title}</h2>
         <p style={s.helper}>{step.helper}</p>
 
-        {/* Step bodies */}
+        {/* ---- bodies ---- */}
         {step.key === "bigGoal" && (
           <div style={s.body}>
             <input
@@ -101,13 +180,19 @@ export default function ZigGoalWizard({ userId = "huw-dev", onClose = () => {} }
               onChange={(e) => setGoalData({ ...goalData, timeframe: e.target.value })}
             >
               <option value="">Select timeframe</option>
-              <option>6 months</option>
-              <option>1 year</option>
-              <option>2 years</option>
-              <option>3 years</option>
-              <option>4 years</option>
-              <option>5 years</option>
+              {TF.map((t) => <option key={t} value={t}>{t}</option>)}
             </select>
+          </div>
+        )}
+
+        {step.key === "midpoint" && (
+          <div style={s.body}>
+            <input
+              style={s.input}
+              placeholder={`By the ${midpointLabel(goalData.timeframe)}, what must be true?`}
+              value={goalData.midpoint}
+              onChange={(e) => setGoalData({ ...goalData, midpoint: e.target.value })}
+            />
           </div>
         )}
 
@@ -122,7 +207,7 @@ export default function ZigGoalWizard({ userId = "huw-dev", onClose = () => {} }
                 onChange={(e) => updateField("yearlyMilestones", i, e.target.value)}
               />
             ))}
-            <button style={s.btn} onClick={() => addYearlyForTimeframe(goalData, setGoalData)}>
+            <button style={s.btn} onClick={ensureYearlyFields}>
               Generate fields for my timeframe
             </button>
           </div>
@@ -178,7 +263,12 @@ export default function ZigGoalWizard({ userId = "huw-dev", onClose = () => {} }
             <div style={s.summaryBox}>
               <div><strong>Goal:</strong> {goalData.bigGoal || "—"}</div>
               <div><strong>Timeframe:</strong> {goalData.timeframe || "—"}</div>
-              <div><strong>Yearly milestones:</strong> {listOrDash(goalData.yearlyMilestones)}</div>
+              {needsMidpoint(goalData.timeframe) && (
+                <div><strong>{midpointLabel(goalData.timeframe)}:</strong> {goalData.midpoint || "—"}</div>
+              )}
+              {yearlyCount(goalData.timeframe) > 0 && (
+                <div><strong>Yearly milestones:</strong> {listOrDash(goalData.yearlyMilestones)}</div>
+              )}
               <div><strong>Monthly actions:</strong> {listOrDash(goalData.monthlyActions)}</div>
               <div><strong>Weekly actions:</strong> {listOrDash(goalData.weeklyActions)}</div>
               <div><strong>Daily actions:</strong> {listOrDash(goalData.dailyActions)}</div>
@@ -186,15 +276,11 @@ export default function ZigGoalWizard({ userId = "huw-dev", onClose = () => {} }
           </div>
         )}
 
-        {/* Nav buttons */}
+        {/* ---- nav ---- */}
         <div style={s.nav}>
           <button style={s.btnLight} onClick={back} disabled={current === 0}>Back</button>
           {step.key !== "finish" ? (
-            <button
-              style={s.btn}
-              onClick={next}
-              disabled={!canProceed(step.key, goalData)}
-            >
+            <button style={s.btn} onClick={next} disabled={!canProceed()}>
               Next
             </button>
           ) : (
@@ -212,44 +298,13 @@ export default function ZigGoalWizard({ userId = "huw-dev", onClose = () => {} }
   );
 }
 
-/* ---------- helpers ---------- */
-
-function canProceed(stepKey, data) {
-  if (stepKey === "bigGoal") return !!data.bigGoal?.trim();
-  if (stepKey === "timeframe") return !!data.timeframe;
-  if (stepKey === "yearly") return (data.yearlyMilestones || []).some(Boolean);
-  if (stepKey === "monthly") return (data.monthlyActions || []).some(Boolean);
-  if (stepKey === "weekly") return (data.weeklyActions || []).some(Boolean);
-  if (stepKey === "daily") return (data.dailyActions || []).some(Boolean);
-  return true;
-}
-
-function addYearlyForTimeframe(goalData, setGoalData) {
-  const map = {
-    "6 months": 0, // skip yearly for half-year goals
-    "1 year": 1,
-    "2 years": 2,
-    "3 years": 3,
-    "4 years": 4,
-    "5 years": 5
-  };
-  const n = map[goalData.timeframe] ?? 0;
-  if (n === 0) {
-    // ensure at least one field if user wants it
-    setGoalData((p) => ({ ...p, yearlyMilestones: p.yearlyMilestones?.length ? p.yearlyMilestones : [""] }));
-    return;
-  }
-  const arr = Array.from({ length: n }, (_, i) => goalData.yearlyMilestones?.[i] || "");
-  setGoalData((p) => ({ ...p, yearlyMilestones: arr }));
-}
-
+/* ---- tiny helpers ---- */
 function listOrDash(arr) {
   const a = (arr || []).filter(Boolean);
   return a.length ? a.join(" • ") : "—";
 }
 
-/* ---------- styles ---------- */
-
+/* ---- styles ---- */
 const s = {
   wrap: { marginTop: 12 },
   quote: { padding: '10px 12px', background: '#f8fafc', border: '1px solid #e5e7eb', borderRadius: 10, marginBottom: 10 },
