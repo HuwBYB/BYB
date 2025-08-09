@@ -5,48 +5,83 @@ import { saveGoalToDatabase } from "../utils/saveGoalToDatabase";
 import { addTasksToTodo } from "../utils/addTasksToTodo";
 import AlfredSpeechBubble from "./AlfredSpeechBubble";
 
-// ----- helpers about timeframe -----
-const TF = ["6 months", "1 year", "2 years", "3 years", "4 years", "5 years"];
-
-function parseTimeframe(tf) {
-  if (!tf) return { months: 0, years: 0 };
-  if (tf.includes("months")) return { months: Number(tf.split(" ")[0]) || 0, years: 0 };
-  if (tf.includes("year"))   return { months: 0, years: Number(tf.split(" ")[0]) || 0 };
-  return { months: 0, years: 0 };
+/* ------------------------ Timeframe helpers (robust) ------------------------ */
+// Normalise strings like "  6   Months " → "6 months"
+function normalize(tf = "") {
+  return tf.toLowerCase().trim().replace(/\s+/g, " ");
 }
-
+// Parse "6 months", "6 month", "6m", "1 year", "1y", etc.
+function parseTimeframe(tfRaw) {
+  const tf = normalize(tfRaw);
+  const m = tf.match(/(\d+)\s*(m|mo|mon|month|months|y|yr|yrs|year|years)/i);
+  if (!m) return { months: 0, years: 0 };
+  const n = Number(m[1]) || 0;
+  const unit = (m[2] || "").toLowerCase();
+  if (unit.startsWith("m")) return { months: n, years: 0 };
+  return { months: 0, years: n };
+}
+// 6 months → midpoint; 1 year → midpoint; 2–5 years → yearly breakdown
 function needsMidpoint(tf) {
-  // 6 months -> 3-month checkpoint
-  // 1 year   -> 6-month checkpoint
   const { months, years } = parseTimeframe(tf);
-  return (months === 6) || (years === 1);
+  return months === 6 || years === 1;
 }
-
 function midpointLabel(tf) {
   const { months, years } = parseTimeframe(tf);
   if (months === 6) return "3-month checkpoint";
-  if (years === 1)  return "6-month checkpoint";
+  if (years === 1) return "6-month checkpoint";
   return "";
 }
-
 function yearlyCount(tf) {
-  // For 2–5 years: ask for Year 1 … Year N-1 (final year = big goal)
   const { years } = parseTimeframe(tf);
-  if (years >= 2) return years - 1;
-  return 0;
+  return years >= 2 ? years - 1 : 0; // Year 1..(N-1). Final year == Big Goal.
 }
 
+/* --------------------------------- Steps ---------------------------------- */
 const BASE_STEPS = [
-  { key: "bigGoal",  title: "Your Biggest Goal", helper: "We’re going to build a map to achieve it — because a goal without direction is just a dream." },
-  { key: "timeframe",title: "Pick Your Timeframe", helper: "Choose how long this will take. We’ll break it into smaller steps so progress feels automatic." },
-  // dynamic step 3 is either "midpoint" or "yearly" or skipped
-  { key: "monthly",  title: "Monthly Actions", helper: "What should happen each month to stay on track? We’ll add these to your monthly to-dos." },
-  { key: "weekly",   title: "Weekly Actions",  helper: "Breaking it down further… what will you do each week to stay on course?" },
-  { key: "daily",    title: "Daily Actions",   helper: "Finally — the baby steps! One small thing you can do every day. This goes to your daily to-dos." },
-  { key: "finish",   title: "All Set",         helper: "We’ll save your plan and add your actions to your to-dos. Time to begin." },
+  {
+    key: "bigGoal",
+    title: "Your Biggest Goal",
+    helper:
+      "We’re going to build a map to achieve it — because a goal without direction is just a dream.",
+  },
+  {
+    key: "timeframe",
+    title: "Pick Your Timeframe",
+    helper:
+      "How long will it take? Choose below — we’ll break it into smaller steps so progress feels automatic.",
+  },
+  // dynamic step 3 inserted here based on timeframe (midpoint or yearly)
+  {
+    key: "monthly",
+    title: "Monthly Actions",
+    helper:
+      "Now let’s get practical. What should happen each month to stay on track? We’ll add these to your monthly to-dos.",
+  },
+  {
+    key: "weekly",
+    title: "Weekly Actions",
+    helper:
+      "Breaking it down further… what will you do each week to stay on course?",
+  },
+  {
+    key: "daily",
+    title: "Daily Actions",
+    helper:
+      "Finally — the baby steps! One small thing you can do every day. These go straight to your daily to-dos.",
+  },
+  {
+    key: "finish",
+    title: "All Set",
+    helper:
+      "We’ll save your plan and add your actions to your to-dos. Time to begin.",
+  },
 ];
 
-export default function ZigGoalWizard({ userId = "huw-dev", onClose = () => {} }) {
+/* ------------------------------- Component -------------------------------- */
+export default function ZigGoalWizard({
+  userId = "huw-dev",
+  onClose = () => {},
+}) {
   const [quote, setQuote] = useState("");
   const [current, setCurrent] = useState(0);
   const [dynamicSteps, setDynamicSteps] = useState(BASE_STEPS);
@@ -56,48 +91,56 @@ export default function ZigGoalWizard({ userId = "huw-dev", onClose = () => {} }
   const [goalData, setGoalData] = useState({
     bigGoal: "",
     timeframe: "",
-    // dynamic fields
-    midpoint: "",            // for 6m / 1y
-    yearlyMilestones: [],    // for 2y+
+    midpoint: "", // for 6m / 1y
+    yearlyMilestones: [], // for 2y+
     monthlyActions: [],
     weeklyActions: [],
-    dailyActions: []
+    dailyActions: [],
   });
 
   useEffect(() => {
     setQuote(ZigQuotes[Math.floor(Math.random() * ZigQuotes.length)]);
   }, []);
 
-  // Rebuild steps whenever timeframe changes
+  // Rebuild steps whenever timeframe changes (and reset to the first dynamic step)
   useEffect(() => {
     const tf = goalData.timeframe;
     let steps = [...BASE_STEPS];
 
-    // Insert a dynamic step after timeframe:
-    // - midpoint (for 6m / 1y) OR
-    // - yearly (for 2–5y) OR
-    // - nothing (if no tf chosen yet)
     if (tf && needsMidpoint(tf)) {
       steps.splice(2, 0, {
         key: "midpoint",
         title: "Halfway Checkpoint",
-        helper: `How will you know you’re on course by the ${midpointLabel(tf)}? Define what must be true.`
+        helper: `How will you know you’re on course by the ${midpointLabel(
+          tf
+        )}? Define what must be true.`,
       });
     } else if (tf && yearlyCount(tf) > 0) {
       steps.splice(2, 0, {
         key: "yearly",
         title: "Milestones: Year by Year",
-        helper: "Where should you be by the end of each year to stay on track?"
+        helper:
+          "Where should you be by the end of each year to stay on track? (We’ll stop at the final year — that’s your Big Goal.)",
       });
     }
+
     setDynamicSteps(steps);
+
+    // Ensure the visible step matches the new flow
+    // If timeframe is selected, jump to step index 2 (first dynamic step)
+    if (goalData.timeframe) {
+      setCurrent(2);
+    } else {
+      // If timeframe cleared, make sure we don't overflow
+      setCurrent((prev) => Math.min(prev, steps.length - 1));
+    }
   }, [goalData.timeframe]);
 
   const total = dynamicSteps.length;
-  const pct = Math.round((current / (total - 1)) * 100);
   const step = dynamicSteps[current];
+  const pct = Math.round((current / (total - 1)) * 100);
 
-  // ----- list helpers -----
+  /* ----------------------------- Field helpers ---------------------------- */
   const addField = (field) =>
     setGoalData((p) => ({ ...p, [field]: [...(p[field] || []), ""] }));
 
@@ -108,16 +151,20 @@ export default function ZigGoalWizard({ userId = "huw-dev", onClose = () => {} }
       return { ...p, [field]: copy };
     });
 
-  // Generate the right # of yearly inputs when user clicks the helper button
+  // Generate Year 1..(N-1) inputs for 2–5 year goals
   function ensureYearlyFields() {
     const n = yearlyCount(goalData.timeframe);
     if (n <= 0) return;
     setGoalData((p) => {
-      const arr = Array.from({ length: n }, (_, i) => p.yearlyMilestones?.[i] || "");
+      const arr = Array.from(
+        { length: n },
+        (_, i) => p.yearlyMilestones?.[i] || ""
+      );
       return { ...p, yearlyMilestones: arr };
     });
   }
 
+  /* --------------------------------- Nav ---------------------------------- */
   const next = () => setCurrent((c) => Math.min(c + 1, total - 1));
   const back = () => setCurrent((c) => Math.max(c - 1, 0));
 
@@ -125,49 +172,63 @@ export default function ZigGoalWizard({ userId = "huw-dev", onClose = () => {} }
     try {
       setSaving(true);
       const res1 = await saveGoalToDatabase(userId, goalData);
-      const res2 = await addTasksToTodo(userId, goalData.dailyActions, goalData.weeklyActions);
-      if (!res1.ok || !res2.ok) alert("Saved locally, but cloud save had an issue.");
+      const res2 = await addTasksToTodo(
+        userId,
+        goalData.dailyActions,
+        goalData.weeklyActions
+      );
+      if (!res1.ok || !res2.ok) {
+        alert("Saved locally, but cloud save had an issue.");
+      }
       setShowAlfred(true);
-      setTimeout(() => { setShowAlfred(false); onClose(); }, 3500);
+      setTimeout(() => {
+        setShowAlfred(false);
+        onClose();
+      }, 3500);
     } finally {
       setSaving(false);
     }
   }
 
-  // ----- can proceed validation -----
+  /* ------------------------------ Validation ------------------------------ */
   function canProceed() {
     const k = step.key;
-    if (k === "bigGoal")  return !!goalData.bigGoal?.trim();
-    if (k === "timeframe")return !!goalData.timeframe;
+    if (k === "bigGoal") return !!goalData.bigGoal?.trim();
+    if (k === "timeframe") return !!goalData.timeframe;
     if (k === "midpoint") return !!goalData.midpoint?.trim();
-    if (k === "yearly")   return (goalData.yearlyMilestones || []).some(Boolean);
-    if (k === "monthly")  return (goalData.monthlyActions || []).some(Boolean);
-    if (k === "weekly")   return (goalData.weeklyActions || []).some(Boolean);
-    if (k === "daily")    return (goalData.dailyActions || []).some(Boolean);
+    if (k === "yearly") return (goalData.yearlyMilestones || []).some(Boolean);
+    if (k === "monthly") return (goalData.monthlyActions || []).some(Boolean);
+    if (k === "weekly") return (goalData.weeklyActions || []).some(Boolean);
+    if (k === "daily") return (goalData.dailyActions || []).some(Boolean);
     return true;
   }
 
+  /* --------------------------------- UI ----------------------------------- */
   return (
     <div style={s.wrap}>
       <div style={s.quote}>“{quote}” — Zig Ziglar</div>
 
       <div style={s.progressWrap} aria-label="Progress">
         <div style={{ ...s.progressBar, width: `${pct}%` }} />
-        <div style={s.progressText}>{step.title} ({current + 1} of {total})</div>
+        <div style={s.progressText}>
+          {step.title} ({current + 1} of {total})
+        </div>
       </div>
 
       <div style={s.card}>
         <h2 style={s.h2}>{step.title}</h2>
         <p style={s.helper}>{step.helper}</p>
 
-        {/* ---- bodies ---- */}
+        {/* Step bodies */}
         {step.key === "bigGoal" && (
           <div style={s.body}>
             <input
               style={s.input}
               placeholder="If you could only achieve one thing in the next few years…"
               value={goalData.bigGoal}
-              onChange={(e) => setGoalData({ ...goalData, bigGoal: e.target.value })}
+              onChange={(e) =>
+                setGoalData({ ...goalData, bigGoal: e.target.value })
+              }
             />
           </div>
         )}
@@ -177,10 +238,17 @@ export default function ZigGoalWizard({ userId = "huw-dev", onClose = () => {} }
             <select
               style={s.select}
               value={goalData.timeframe}
-              onChange={(e) => setGoalData({ ...goalData, timeframe: e.target.value })}
+              onChange={(e) =>
+                setGoalData({ ...goalData, timeframe: e.target.value })
+              }
             >
               <option value="">Select timeframe</option>
-              {TF.map((t) => <option key={t} value={t}>{t}</option>)}
+              <option value="6 months">6 months</option>
+              <option value="1 year">1 year</option>
+              <option value="2 years">2 years</option>
+              <option value="3 years">3 years</option>
+              <option value="4 years">4 years</option>
+              <option value="5 years">5 years</option>
             </select>
           </div>
         )}
@@ -189,9 +257,13 @@ export default function ZigGoalWizard({ userId = "huw-dev", onClose = () => {} }
           <div style={s.body}>
             <input
               style={s.input}
-              placeholder={`By the ${midpointLabel(goalData.timeframe)}, what must be true?`}
+              placeholder={`By the ${midpointLabel(
+                goalData.timeframe
+              )}, what must be true?`}
               value={goalData.midpoint}
-              onChange={(e) => setGoalData({ ...goalData, midpoint: e.target.value })}
+              onChange={(e) =>
+                setGoalData({ ...goalData, midpoint: e.target.value })
+              }
             />
           </div>
         )}
@@ -224,7 +296,9 @@ export default function ZigGoalWizard({ userId = "huw-dev", onClose = () => {} }
                 onChange={(e) => updateField("monthlyActions", i, e.target.value)}
               />
             ))}
-            <button style={s.btn} onClick={() => addField("monthlyActions")}>+ Add monthly target</button>
+            <button style={s.btn} onClick={() => addField("monthlyActions")}>
+              + Add monthly target
+            </button>
           </div>
         )}
 
@@ -239,7 +313,9 @@ export default function ZigGoalWizard({ userId = "huw-dev", onClose = () => {} }
                 onChange={(e) => updateField("weeklyActions", i, e.target.value)}
               />
             ))}
-            <button style={s.btn} onClick={() => addField("weeklyActions")}>+ Add weekly action</button>
+            <button style={s.btn} onClick={() => addField("weeklyActions")}>
+              + Add weekly action
+            </button>
           </div>
         )}
 
@@ -254,33 +330,60 @@ export default function ZigGoalWizard({ userId = "huw-dev", onClose = () => {} }
                 onChange={(e) => updateField("dailyActions", i, e.target.value)}
               />
             ))}
-            <button style={s.btn} onClick={() => addField("dailyActions")}>+ Add daily habit</button>
+            <button style={s.btn} onClick={() => addField("dailyActions")}>
+              + Add daily habit
+            </button>
           </div>
         )}
 
         {step.key === "finish" && (
           <div style={s.body}>
             <div style={s.summaryBox}>
-              <div><strong>Goal:</strong> {goalData.bigGoal || "—"}</div>
-              <div><strong>Timeframe:</strong> {goalData.timeframe || "—"}</div>
+              <div>
+                <strong>Goal:</strong> {goalData.bigGoal || "—"}
+              </div>
+              <div>
+                <strong>Timeframe:</strong> {goalData.timeframe || "—"}
+              </div>
               {needsMidpoint(goalData.timeframe) && (
-                <div><strong>{midpointLabel(goalData.timeframe)}:</strong> {goalData.midpoint || "—"}</div>
+                <div>
+                  <strong>{midpointLabel(goalData.timeframe)}:</strong>{" "}
+                  {goalData.midpoint || "—"}
+                </div>
               )}
               {yearlyCount(goalData.timeframe) > 0 && (
-                <div><strong>Yearly milestones:</strong> {listOrDash(goalData.yearlyMilestones)}</div>
+                <div>
+                  <strong>Yearly milestones:</strong>{" "}
+                  {listOrDash(goalData.yearlyMilestones)}
+                </div>
               )}
-              <div><strong>Monthly actions:</strong> {listOrDash(goalData.monthlyActions)}</div>
-              <div><strong>Weekly actions:</strong> {listOrDash(goalData.weeklyActions)}</div>
-              <div><strong>Daily actions:</strong> {listOrDash(goalData.dailyActions)}</div>
+              <div>
+                <strong>Monthly actions:</strong>{" "}
+                {listOrDash(goalData.monthlyActions)}
+              </div>
+              <div>
+                <strong>Weekly actions:</strong>{" "}
+                {listOrDash(goalData.weeklyActions)}
+              </div>
+              <div>
+                <strong>Daily actions:</strong>{" "}
+                {listOrDash(goalData.dailyActions)}
+              </div>
             </div>
           </div>
         )}
 
-        {/* ---- nav ---- */}
+        {/* Nav */}
         <div style={s.nav}>
-          <button style={s.btnLight} onClick={back} disabled={current === 0}>Back</button>
+          <button style={s.btnLight} onClick={back} disabled={current === 0}>
+            Back
+          </button>
           {step.key !== "finish" ? (
-            <button style={s.btn} onClick={next} disabled={!canProceed()}>
+            <button
+              style={s.btn}
+              onClick={next}
+              disabled={!canProceed()}
+            >
               Next
             </button>
           ) : (
@@ -298,27 +401,86 @@ export default function ZigGoalWizard({ userId = "huw-dev", onClose = () => {} }
   );
 }
 
-/* ---- tiny helpers ---- */
+/* ------------------------------- Tiny utils ------------------------------- */
 function listOrDash(arr) {
   const a = (arr || []).filter(Boolean);
   return a.length ? a.join(" • ") : "—";
 }
 
-/* ---- styles ---- */
+/* --------------------------------- Styles -------------------------------- */
 const s = {
   wrap: { marginTop: 12 },
-  quote: { padding: '10px 12px', background: '#f8fafc', border: '1px solid #e5e7eb', borderRadius: 10, marginBottom: 10 },
-  progressWrap: { position: 'relative', height: 8, background: '#eee', borderRadius: 999, overflow: 'hidden', marginBottom: 10 },
-  progressBar: { position: 'absolute', top: 0, left: 0, bottom: 0, transition: 'width .2s', background: '#16a34a' },
-  progressText: { marginTop: 8, fontSize: 12, color: '#666' },
-  card: { border: '1px solid #e5e7eb', borderRadius: 12, padding: 16, background: '#fff' },
-  h2: { margin: '0 0 6px 0' },
-  helper: { margin: '0 0 12px 0', color: '#555' },
-  body: { display: 'grid', gap: 8 },
-  input: { padding: '10px 12px', border: '1px solid #ddd', borderRadius: 8 },
-  select: { padding: '10px 12px', border: '1px solid #ddd', borderRadius: 8, maxWidth: 220 },
-  nav: { display: 'flex', gap: 8, marginTop: 14, justifyContent: 'flex-end' },
-  btn: { padding: '10px 14px', borderRadius: 8, border: '1px solid #ddd', background: '#111', color: '#fff', cursor: 'pointer' },
-  btnLight: { padding: '10px 14px', borderRadius: 8, border: '1px solid #ddd', background: '#fff', cursor: 'pointer' },
-  summaryBox: { border: '1px dashed #ddd', borderRadius: 8, padding: 12, background: '#fafafa', display: 'grid', gap: 6 }
+  quote: {
+    padding: "10px 12px",
+    background: "#f8fafc",
+    border: "1px solid #e5e7eb",
+    borderRadius: 10,
+    marginBottom: 10,
+  },
+  progressWrap: {
+    position: "relative",
+    height: 8,
+    background: "#eee",
+    borderRadius: 999,
+    overflow: "hidden",
+    marginBottom: 10,
+  },
+  progressBar: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    bottom: 0,
+    transition: "width .2s",
+    background: "#16a34a",
+  },
+  progressText: { marginTop: 8, fontSize: 12, color: "#666" },
+  card: {
+    border: "1px solid #e5e7eb",
+    borderRadius: 12,
+    padding: 16,
+    background: "#fff",
+  },
+  h2: { margin: "0 0 6px 0" },
+  helper: { margin: "0 0 12px 0", color: "#555" },
+  body: { display: "grid", gap: 8 },
+  input: {
+    padding: "10px 12px",
+    border: "1px solid #ddd",
+    borderRadius: 8,
+  },
+  select: {
+    padding: "10px 12px",
+    border: "1px solid #ddd",
+    borderRadius: 8,
+    maxWidth: 220,
+  },
+  nav: {
+    display: "flex",
+    gap: 8,
+    marginTop: 14,
+    justifyContent: "flex-end",
+  },
+  btn: {
+    padding: "10px 14px",
+    borderRadius: 8,
+    border: "1px solid #ddd",
+    background: "#111",
+    color: "#fff",
+    cursor: "pointer",
+  },
+  btnLight: {
+    padding: "10px 14px",
+    borderRadius: 8,
+    border: "1px solid #ddd",
+    background: "#fff",
+    cursor: "pointer",
+  },
+  summaryBox: {
+    border: "1px dashed #ddd",
+    borderRadius: 8,
+    padding: 12,
+    background: "#fafafa",
+    display: "grid",
+    gap: 6,
+  },
 };
