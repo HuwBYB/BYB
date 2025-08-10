@@ -79,9 +79,10 @@ const BASE_STEPS = [
 
 /* ------------------------------- Component -------------------------------- */
 export default function ZigGoalWizard({
-  userId = "11111111-1111-1111-1111-111111111111",
+  userId = "11111111-1111-1111-1111-111111111111", // ← use a real UUID
   onClose = () => {},
 }) {
+
 
   const [quote, setQuote] = useState("");
   const [current, setCurrent] = useState(0);
