@@ -29,3 +29,4 @@ async function finish() {
     setSaving(false);
   }
 }
+export default ZigGoalWizard;
