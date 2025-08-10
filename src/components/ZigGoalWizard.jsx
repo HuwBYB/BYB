@@ -79,9 +79,10 @@ const BASE_STEPS = [
 
 /* ------------------------------- Component -------------------------------- */
 export default function ZigGoalWizard({
-  userId = "huw-dev",
+  userId = "11111111-1111-1111-1111-111111111111",
   onClose = () => {},
 }) {
+
   const [quote, setQuote] = useState("");
   const [current, setCurrent] = useState(0);
   const [dynamicSteps, setDynamicSteps] = useState(BASE_STEPS);
