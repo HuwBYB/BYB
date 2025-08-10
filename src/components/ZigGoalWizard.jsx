@@ -6,11 +6,10 @@ import { addTasksToTodo } from "../utils/addTasksToTodo";
 import AlfredSpeechBubble from "./AlfredSpeechBubble";
 
 /* ------------------------ Timeframe helpers (robust) ------------------------ */
-// Normalise strings like "  6   Months " → "6 months"
 function normalize(tf = "") {
   return tf.toLowerCase().trim().replace(/\s+/g, " ");
 }
-// Parse "6 months", "6 month", "6m", "1 year", "1y", etc.
+// Parse "6 months", "6m", "1 year", "1y", etc.
 function parseTimeframe(tfRaw) {
   const tf = normalize(tfRaw);
   const m = tf.match(/(\d+)\s*(m|mo|mon|month|months|y|yr|yrs|year|years)/i);
@@ -79,11 +78,10 @@ const BASE_STEPS = [
 
 /* ------------------------------- Component -------------------------------- */
 export default function ZigGoalWizard({
-  userId = "11111111-1111-1111-1111-111111111111", // ← use a real UUID
+  // ✅ Use a real UUID in dev so Supabase accepts user_id (RLS dev policy must match this)
+  userId = "11111111-1111-1111-1111-111111111111",
   onClose = () => {},
 }) {
-
-
   const [quote, setQuote] = useState("");
   const [current, setCurrent] = useState(0);
   const [dynamicSteps, setDynamicSteps] = useState(BASE_STEPS);
@@ -129,11 +127,9 @@ export default function ZigGoalWizard({
     setDynamicSteps(steps);
 
     // Ensure the visible step matches the new flow
-    // If timeframe is selected, jump to step index 2 (first dynamic step)
     if (goalData.timeframe) {
       setCurrent(2);
     } else {
-      // If timeframe cleared, make sure we don't overflow
       setCurrent((prev) => Math.min(prev, steps.length - 1));
     }
   }, [goalData.timeframe]);
