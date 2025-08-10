@@ -1,35 +1,37 @@
 import { supabase } from "../supabaseClient";
+import { ensureUuid } from "../constants";
 
 export async function addTasksToTodo(userId, dailyActions = [], weeklyActions = []) {
   try {
-    const today = new Date().toISOString().split("T")[0];
+    if (!supabase) return { ok: false, error: "supabase-not-configured" };
 
-    // Local backup
-    const local = JSON.parse(localStorage.getItem("byb:todos:seed") || "[]");
-    const localTasks = [
-      ...dailyActions.map(t => ({ user_id: userId, task: t, frequency: "daily", completed: false, created_at: today, rollover: true, big_goal_task: true })),
-      ...weeklyActions.map(t => ({ user_id: userId, task: t, frequency: "weekly", completed: false, created_at: today, rollover: true, big_goal_task: true })),
+    const uid = ensureUuid(userId); // ← force UUID
+    const rows = [
+      ...dailyActions.filter(Boolean).map((t) => ({
+        user_id: uid,
+        task: t,
+        frequency: "daily",
+        completed: false,
+        rollover: true,
+        big_goal_task: true,
+      })),
+      ...weeklyActions.filter(Boolean).map((t) => ({
+        user_id: uid,
+        task: t,
+        frequency: "weekly",
+        completed: false,
+        rollover: true,
+        big_goal_task: true,
+      })),
     ];
-    localStorage.setItem("byb:todos:seed", JSON.stringify([...local, ...localTasks]));
 
-    if (!supabase) return { ok: true, localOnly: true };
-
-    const rows = localTasks.map(t => ({
-      user_id: t.user_id,
-      task: t.task,
-      frequency: t.frequency,
-      completed: t.completed,
-      created_at: t.created_at,  // date column in Supabase
-      rollover: t.rollover,
-      big_goal_task: t.big_goal_task,
-    }));
-
+    if (rows.length === 0) return { ok: true };
+    console.log("[BYB] inserting todos rows:", rows);
     const { error } = await supabase.from("todos").insert(rows);
-    if (error) throw error;
-
+    if (error) return { ok: false, error };
     return { ok: true };
   } catch (err) {
     console.error("addTasksToTodo error:", err);
-    return { ok: false, error: err.message };
+    return { ok: false, error: err?.message || "unknown" };
   }
 }
