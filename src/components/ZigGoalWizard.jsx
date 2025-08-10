@@ -78,9 +78,10 @@ const BASE_STEPS = [
 
 /* ------------------------------- Component -------------------------------- */
 export default function ZigGoalWizard({
-  // ✅ Use a real UUID in dev so Supabase accepts user_id (RLS dev policy must match this)
   userId = "11111111-1111-1111-1111-111111111111",
   onClose = () => {},
+}) { ... }
+
 }) {
   const [quote, setQuote] = useState("");
   const [current, setCurrent] = useState(0);
