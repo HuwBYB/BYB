@@ -1,3 +1,5 @@
+return <div style={{ color: "red" }}>ZigGoalWizard loaded</div>;
+
 async function finish() {
   try {
     setSaving(true);
